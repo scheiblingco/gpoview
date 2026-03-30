@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPO Viewer{{if .ComputerName}} — {{.ComputerName}}{{end}}</title>
+  <style>
+    /* ── Variables ─────────────────────────────────────────────────────────── */
+    :root {
+      --blue:    #1a73e8;
+      --blue-dk: #1558b0;
+      --green:   #1e8e3e;
+      --red:     #d93025;
+      --yellow:  #b06000;
+      --gray:    #5f6368;
+      --bg:      #f0f4f9;
+      --surface: #ffffff;
+      --border:  #dadce0;
+      --text:    #202124;
+      --text-sm: #5f6368;
+      --font:    system-ui, "Segoe UI", Roboto, sans-serif;
+      --mono:    "Cascadia Code", "Consolas", "Courier New", monospace;
+      --radius:  8px;
+      --shadow:  0 1px 3px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:      #1a1c1e;
+        --surface: #2d2f31;
+        --border:  #3c3f42;
+        --text:    #e3e3e6;
+        --text-sm: #9aa0a6;
+      }
+    }
+
+    /* ── Reset / base ──────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      font-size: 14px;
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.5;
+    }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Header ────────────────────────────────────────────────────────────── */
+    .site-header {
+      background: linear-gradient(135deg, #1a237e 0%, #1a73e8 100%);
+      color: #fff;
+      padding: 0 24px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 6px rgba(0,0,0,.3);
+    }
+    .header-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      padding: 12px 0;
+      flex-wrap: wrap;
+    }
+    .header-brand { display: flex; align-items: center; gap: 10px; }
+    .header-brand h1 { font-size: 20px; font-weight: 600; letter-spacing: .3px; }
+    .header-brand .shield { font-size: 22px; }
+    .header-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 18px;
+      margin-left: auto;
+    }
+    .meta-chip {
+      display: flex;
+      align-items: baseline;
+      gap: 5px;
+      background: rgba(255,255,255,.15);
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 12px;
+    }
+    .meta-chip .label { opacity: .75; }
+    .meta-chip .value { font-weight: 600; }
+    .slowlink-chip {
+      background: rgba(255, 200, 0, .25);
+      border: 1px solid rgba(255, 200, 0, .5);
+    }
+
+    /* ── Alert ─────────────────────────────────────────────────────────────── */
+    .alert {
+      max-width: 1400px;
+      margin: 16px auto 0;
+      padding: 12px 18px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .alert-warn {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      color: #664d03;
+    }
+    .alert-warn strong { color: #b06000; }
+    .alert-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+
+    /* ── Tabs ──────────────────────────────────────────────────────────────── */
+    .tabs {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 62px;
+      z-index: 90;
+    }
+    .tabs-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      padding: 0 24px;
+      gap: 0;
+    }
+    .tab-btn {
+      padding: 12px 20px;
+      border: none;
+      border-bottom: 3px solid transparent;
+      background: transparent;
+      color: var(--text-sm);
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: color .15s, border-color .15s;
+      white-space: nowrap;
+    }
+    .tab-btn:hover { color: var(--text); background: rgba(26,115,232,.05); }
+    .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+    /* ── Layout ────────────────────────────────────────────────────────────── */
+    .content {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px 24px 48px;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Card ──────────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(26,115,232,.04);
+    }
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      flex: 1;
+    }
+    .card-badge {
+      font-size: 12px;
+      background: var(--blue);
+      color: #fff;
+      border-radius: 12px;
+      padding: 1px 8px;
+      font-weight: 500;
+    }
+    .card-body { padding: 0; }
+
+    /* ── Info bar ──────────────────────────────────────────────────────────── */
+    .info-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 24px;
+      padding: 12px 18px;
+      background: rgba(26,115,232,.03);
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .info-item { display: flex; gap: 6px; }
+    .info-label { color: var(--text-sm); }
+    .info-value { font-weight: 500; }
+
+    /* ── Tables ────────────────────────────────────────────────────────────── */
+    .tbl-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      text-align: left;
+      padding: 9px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--text-sm);
+      background: rgba(0,0,0,.03);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+    th:hover { background: rgba(26,115,232,.06); }
+    th .sort-arrow { margin-left: 4px; opacity: .4; font-size: 10px; }
+    td {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(26,115,232,.03); }
+    .mono { font-family: var(--mono); font-size: 12px; color: var(--text-sm); }
+
+    /* ── Badges ────────────────────────────────────────────────────────────── */
+    .badge {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .2px;
+      white-space: nowrap;
+    }
+    .badge-green  { background: #e6f4ea; color: var(--green); border: 1px solid #a8d5b5; }
+    .badge-red    { background: #fce8e6; color: var(--red);   border: 1px solid #f5c6c4; }
+    .badge-yellow { background: #fef7e0; color: var(--yellow);border: 1px solid #fde293; }
+    .badge-gray   { background: #f1f3f4; color: var(--gray);  border: 1px solid #dadce0; }
+    .badge-blue   { background: #e8f0fe; color: var(--blue);  border: 1px solid #c5d8fb; }
+    .state-enabled  { background: #e6f4ea; color: var(--green); border: 1px solid #a8d5b5; }
+    .state-disabled { background: #fce8e6; color: var(--red);   border: 1px solid #f5c6c4; }
+    .state-unknown  { background: #f1f3f4; color: var(--gray);  border: 1px solid #dadce0; }
+
+    /* ── Policy name + explain ─────────────────────────────────────────────── */
+    .policy-name  { font-weight: 500; }
+    .policy-explain {
+      font-size: 12px;
+      color: var(--text-sm);
+      margin-top: 3px;
+      max-height: 3.6em;
+      overflow: hidden;
+      line-height: 1.4;
+      cursor: pointer;
+    }
+    .policy-explain.expanded { max-height: none; }
+    .policy-explain::after {
+      content: " [more]";
+      color: var(--blue);
+      font-size: 11px;
+    }
+    .policy-explain.expanded::after { content: " [less]"; }
+
+    /* ── Category path ─────────────────────────────────────────────────────── */
+    .category { font-size: 12px; color: var(--text-sm); }
+
+    /* ── Extension details ─────────────────────────────────────────────────── */
+    .ext-details { border-bottom: 1px solid var(--border); }
+    .ext-details:last-child { border-bottom: none; }
+    .ext-summary {
+      padding: 12px 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      list-style: none;
+      font-weight: 500;
+      user-select: none;
+      background: rgba(0,0,0,.01);
+    }
+    .ext-summary::-webkit-details-marker { display: none; }
+    .ext-summary:hover { background: rgba(26,115,232,.04); }
+    .ext-summary .toggle-icon { font-size: 12px; color: var(--text-sm); transition: transform .2s; }
+    details[open] .toggle-icon { transform: rotate(90deg); }
+    .ext-name { flex: 1; }
+    .ext-count { font-size: 12px; color: var(--text-sm); font-weight: 400; }
+    .ext-body { padding: 0 0 12px; }
+
+    /* ── Scripts ───────────────────────────────────────────────────────────── */
+    .script-cmd { font-family: var(--mono); font-size: 12px; }
+    .script-args { font-family: var(--mono); font-size: 12px; color: var(--text-sm); }
+
+    /* ── Raw XML ───────────────────────────────────────────────────────────── */
+    .raw-xml {
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 14px 18px;
+      overflow-x: auto;
+      background: rgba(0,0,0,.03);
+      white-space: pre;
+      line-height: 1.6;
+    }
+
+    /* ── Search box ────────────────────────────────────────────────────────── */
+    .search-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .search-input {
+      flex: 1;
+      max-width: 400px;
+      padding: 7px 12px 7px 32px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 13px;
+      background: var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235f6368' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 10px center;
+      color: var(--text);
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .search-input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(26,115,232,.15); }
+    .search-count { font-size: 12px; color: var(--text-sm); }
+    .expand-all-btn {
+      margin-left: auto;
+      padding: 5px 12px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .expand-all-btn:hover { background: var(--bg); }
+    .hidden { display: none !important; }
+    .highlight { background: #ffe082; border-radius: 2px; padding: 0 1px; }
+
+    /* ── SOM tree ──────────────────────────────────────────────────────────── */
+    .som-tree { padding: 12px 18px; }
+    .som-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 5px 0;
+      font-size: 13px;
+    }
+    .som-indent { width: 20px; border-left: 2px solid var(--border); margin-left: 8px; height: 22px; }
+    .som-type-chip {
+      font-size: 11px;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-weight: 500;
+      background: #e8f0fe;
+      color: var(--blue);
+      min-width: 48px;
+      text-align: center;
+    }
+    .som-path { font-family: var(--mono); font-size: 12px; }
+    .som-blocked { color: var(--red); font-size: 11px; }
+
+    /* ── Security groups ───────────────────────────────────────────────────── */
+    .sg-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 6px;
+      padding: 12px 18px;
+    }
+    .sg-item {
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+    }
+    .sg-name { font-weight: 500; }
+    .sg-sid  { font-family: var(--mono); color: var(--text-sm); font-size: 11px; }
+
+    /* ── Empty state ───────────────────────────────────────────────────────── */
+    .empty { padding: 32px; text-align: center; color: var(--text-sm); }
+    .empty-icon { font-size: 36px; margin-bottom: 8px; }
+    .empty-msg  { font-size: 14px; }
+  </style>
+</head>
+<body>
+
+
+<header class="site-header">
+  <div class="header-inner">
+    <div class="header-brand">
+      <span class="shield">🛡</span>
+      <h1>GPO Viewer</h1>
+    </div>
+    <div class="header-meta">
+      {{if .ComputerName}}
+      <div class="meta-chip">
+        <span class="label">Computer</span>
+        <span class="value">{{.ComputerName}}</span>
+      </div>
+      {{end}}
+      {{if .DomainName}}
+      <div class="meta-chip">
+        <span class="label">Domain</span>
+        <span class="value">{{.DomainName}}</span>
+      </div>
+      {{end}}
+      {{if .SiteName}}
+      <div class="meta-chip">
+        <span class="label">Site</span>
+        <span class="value">{{.SiteName}}</span>
+      </div>
+      {{end}}
+      <div class="meta-chip">
+        <span class="label">Generated</span>
+        <span class="value">{{.GeneratedAtFmt}}</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+
+{{if .HasError}}
+<div class="content" style="padding-bottom:0">
+  <div class="alert alert-warn">
+    <span class="alert-icon">⚠</span>
+    <div>
+      <strong>Data collection warning</strong> — {{.ErrorMsg}}<br>
+      <small>Run as Administrator to include Computer Configuration policies.</small>
+    </div>
+  </div>
+</div>
+{{end}}
+
+
+<div class="tabs">
+  <div class="tabs-inner">
+    <button class="tab-btn active" data-tab="computer">💻 Computer Configuration</button>
+    <button class="tab-btn"        data-tab="user">👤 User Configuration</button>
+  </div>
+</div>
+
+
+<div class="content">
+
+  
+  <div id="tab-computer" class="tab-panel active">
+    {{if .Computer}}
+      {{template "resultset" .Computer}}
+    {{else}}
+      <div class="empty"><div class="empty-icon">🖥</div><div class="empty-msg">No computer configuration data. Try running as Administrator.</div></div>
+    {{end}}
+  </div>
+
+  
+  <div id="tab-user" class="tab-panel">
+    {{if .User}}
+      {{template "resultset" .User}}
+    {{else}}
+      <div class="empty"><div class="empty-icon">👤</div><div class="empty-msg">No user configuration data available.</div></div>
+    {{end}}
+  </div>
+
+</div>
+
+{{define "resultset"}}
+
+{{/* ── Info bar ───────────────────────────────────────────────────────────── */}}
+<div class="info-bar">
+  {{if .Domain}}<div class="info-item"><span class="info-label">Domain:</span><span class="info-value">{{.Domain}}</span></div>{{end}}
+  {{if .Site}}<div class="info-item"><span class="info-label">Site:</span><span class="info-value">{{.Site}}</span></div>{{end}}
+  <div class="info-item">
+    <span class="info-label">Slow Link:</span>
+    <span class="info-value">{{if .SlowLink}}<span class="badge badge-yellow">Yes</span>{{else}}<span class="badge badge-green">No</span>{{end}}</span>
+  </div>
+  <div class="info-item"><span class="info-label">GPOs applied:</span><span class="info-value">{{len .GPOs}}</span></div>
+  <div class="info-item"><span class="info-label">Extensions:</span><span class="info-value">{{len .Extensions}}</span></div>
+</div>
+
+{{/* ── Applied GPOs ─────────────────────────────────────────────────────── */}}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Applied Group Policy Objects</span>
+    <span class="card-badge">{{len .GPOs}}</span>
+  </div>
+  <div class="card-body">
+    {{if .GPOs}}
+    <div class="tbl-wrap">
+    <table id="gpo-table-{{.Scope}}">
+      <thead>
+        <tr>
+          <th data-col="0">#<span class="sort-arrow">↕</span></th>
+          <th data-col="1">GPO Name<span class="sort-arrow">↕</span></th>
+          <th data-col="2">Domain<span class="sort-arrow">↕</span></th>
+          <th data-col="3">Status<span class="sort-arrow">↕</span></th>
+          <th data-col="4">Version (U/C)<span class="sort-arrow">↕</span></th>
+          <th data-col="5">Linked To<span class="sort-arrow">↕</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .GPOs}}
+        {{$s := gpoStatus .}}
+        <tr>
+          <td style="width:36px;text-align:center;color:var(--text-sm)">{{.AppliedOrder}}</td>
+          <td>
+            <div style="font-weight:500">{{.Name}}</div>
+            {{if .GUID}}<div class="mono">{{.GUID}}</div>{{end}}
+          </td>
+          <td>{{.Domain}}</td>
+          <td><span class="badge {{index $s 1}}">{{index $s 0}}</span></td>
+          <td class="mono" style="white-space:nowrap">{{.UserVersion}} / {{.ComputerVersion}}</td>
+          <td class="mono">{{.Link}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{else}}
+    <div class="empty"><div class="empty-msg">No GPOs were applied to this scope.</div></div>
+    {{end}}
+  </div>
+</div>
+
+
+{{if .Extensions}}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Policy Settings by Extension</span>
+    <span class="card-badge">{{len .Extensions}}</span>
+  </div>
+  <div class="search-bar">
+    <input class="search-input" type="search" placeholder="Filter policies…" oninput="filterPolicies(this, '{{.Scope}}')">
+    <span class="search-count" id="search-count-{{.Scope}}"></span>
+    <button class="expand-all-btn" onclick="expandAll('{{.Scope}}')">Expand All</button>
+  </div>
+  <div class="card-body" id="ext-list-{{.Scope}}">
+    {{range .Extensions}}
+    <details class="ext-details" data-ext="{{.Name}}">
+      <summary class="ext-summary">
+        <span class="toggle-icon">▶</span>
+        <span class="ext-name">{{.Name}}</span>
+        {{$sum := extSummary .}}{{if $sum}}<span class="ext-count">({{$sum}})</span>{{end}}
+      </summary>
+      <div class="ext-body">
+
+        
+        {{if .Policies}}
+        <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Policy</th>
+              <th>State</th>
+              <th>Category</th>
+              <th>Source GPO</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Policies}}
+            <tr>
+              <td>
+                <div class="policy-name">{{.Name}}</div>
+                {{if .Explain}}<div class="policy-explain" onclick="toggleExplain(this)">{{.Explain}}</div>{{end}}
+                {{if .Settings}}
+                <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">
+                  {{range .Settings}}
+                  <span style="font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 6px">
+                    <span style="color:var(--text-sm)">{{.Name}}:</span> {{.Value}}
+                  </span>
+                  {{end}}
+                </div>
+                {{end}}
+              </td>
+              <td><span class="badge state-{{stateClass .State}}">{{.State}}</span></td>
+              <td class="category">{{.Category}}</td>
+              <td style="white-space:nowrap;color:var(--text-sm)">{{.GPO}}</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+        </div>
+        {{end}}
+
+        
+        {{if .Scripts}}
+        <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr><th>Type</th><th>Order</th><th>Command</th><th>Arguments</th><th>Source GPO</th></tr>
+          </thead>
+          <tbody>
+            {{range .Scripts}}
+            <tr>
+              <td><span class="badge badge-blue">{{.ScriptType}}</span></td>
+              <td style="text-align:center;color:var(--text-sm)">{{.Order}}</td>
+              <td class="script-cmd">{{.Command}}</td>
+              <td class="script-args">{{.Args}}</td>
+              <td style="color:var(--text-sm)">{{.GPO}}</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+        </div>
+        {{end}}
+
+        
+        {{if .Items}}
+        <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+          <tbody>
+            {{range .Items}}
+            <tr>
+              <td class="mono" style="color:var(--text-sm)">{{.Name}}</td>
+              <td>{{.Value}}</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+        </div>
+        {{end}}
+
+        
+        {{if .RawXML}}
+        <pre class="raw-xml">{{.RawXML}}</pre>
+        {{end}}
+
+        {{if and (not .Policies) (not .Scripts) (not .Items) (not .RawXML)}}
+        <div class="empty"><div class="empty-msg">No settings data captured for this extension.</div></div>
+        {{end}}
+
+      </div>
+    </details>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+
+{{if .SOMs}}
+<div class="card">
+  <details>
+    <summary class="card-header" style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px">
+      <span style="font-size:12px;color:var(--text-sm)">▶</span>
+      <span class="card-title">Scope of Management (GPO Inheritance Chain)</span>
+      <span class="card-badge">{{len .SOMs}}</span>
+    </summary>
+    <div class="som-tree">
+      {{range $i, $s := .SOMs}}
+      <div class="som-item">
+        {{if gt $i 0}}<div class="som-indent"></div>{{end}}
+        <span class="som-type-chip">{{$s.Type}}</span>
+        <span class="som-path">{{$s.Path}}</span>
+        {{if $s.Blocked}}<span class="som-blocked">⛔ Inheritance blocked here</span>{{end}}
+        <span style="font-size:11px;color:var(--text-sm);margin-left:auto">{{$s.GPOsApplied}} applied</span>
+      </div>
+      {{end}}
+    </div>
+  </details>
+</div>
+{{end}}
+
+
+{{if .SecurityGroups}}
+<div class="card">
+  <details>
+    <summary class="card-header" style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px">
+      <span style="font-size:12px;color:var(--text-sm)">▶</span>
+      <span class="card-title">Security Groups</span>
+      <span class="card-badge">{{len .SecurityGroups}}</span>
+    </summary>
+    <div class="sg-grid">
+      {{range .SecurityGroups}}
+      <div class="sg-item">
+        <span class="sg-name">{{.SamAccountName}}</span>
+        <span class="sg-sid">{{.SID}}</span>
+      </div>
+      {{end}}
+    </div>
+  </details>
+</div>
+{{end}}
+
+{{end}}
+
+
+<script>
+/* ── Tab switching ─────────────────────────────────────────────────────── */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+/* ── GPO table sorting ─────────────────────────────────────────────────── */
+document.querySelectorAll('th[data-col]').forEach(th => {
+  th.addEventListener('click', () => {
+    const table = th.closest('table');
+    const tbody = table.querySelector('tbody');
+    const col   = +th.dataset.col;
+    const arrow = th.querySelector('.sort-arrow');
+    const asc   = arrow.textContent !== '↑';
+
+    table.querySelectorAll('th .sort-arrow').forEach(a => { a.textContent = '↕'; a.style.opacity = '.4'; });
+    arrow.textContent = asc ? '↑' : '↓';
+    arrow.style.opacity = '1';
+
+    const rows = [...tbody.querySelectorAll('tr')];
+    rows.sort((a, b) => {
+      const ta = a.cells[col]?.textContent.trim() ?? '';
+      const tb = b.cells[col]?.textContent.trim() ?? '';
+      const na = parseFloat(ta), nb = parseFloat(tb);
+      const cmp = !isNaN(na) && !isNaN(nb) ? na - nb : ta.localeCompare(tb);
+      return asc ? cmp : -cmp;
+    });
+    rows.forEach(r => tbody.appendChild(r));
+  });
+});
+
+/* ── Policy search / filter ────────────────────────────────────────────── */
+function filterPolicies(input, scope) {
+  const q = input.value.trim().toLowerCase();
+  const list = document.getElementById('ext-list-' + scope);
+  if (!list) return;
+
+  let visibleRows = 0;
+
+  list.querySelectorAll('.ext-details').forEach(details => {
+    let extMatch = 0;
+    details.querySelectorAll('tbody tr').forEach(row => {
+      const text = row.textContent.toLowerCase();
+      const match = !q || text.includes(q);
+      row.classList.toggle('hidden', !match);
+      if (match) extMatch++;
+    });
+    // Also check generic items and script rows.
+    details.querySelectorAll('tr').forEach(row => {
+      if (!row.closest('tbody')) return;
+      if (!row.classList.contains('hidden')) visibleRows++;
+    });
+
+    const hasVisibleRows = extMatch > 0;
+    details.classList.toggle('hidden', q.length > 0 && !hasVisibleRows);
+    if (q && hasVisibleRows) details.setAttribute('open', '');
+  });
+
+  const counter = document.getElementById('search-count-' + scope);
+  if (counter) counter.textContent = q ? visibleRows + ' match' + (visibleRows !== 1 ? 'es' : '') : '';
+}
+
+/* ── Expand / Collapse all ─────────────────────────────────────────────── */
+function expandAll(scope) {
+  const list = document.getElementById('ext-list-' + scope);
+  if (!list) return;
+  const btn = list.closest('.card')?.querySelector('.expand-all-btn');
+  const allOpen = [...list.querySelectorAll('.ext-details:not(.hidden)')].every(d => d.open);
+  list.querySelectorAll('.ext-details:not(.hidden)').forEach(d => {
+    d.open = !allOpen;
+  });
+  if (btn) btn.textContent = allOpen ? 'Expand All' : 'Collapse All';
+}
+
+/* ── Toggle explain text ───────────────────────────────────────────────── */
+function toggleExplain(el) {
+  el.classList.toggle('expanded');
+}
+</script>
+
+</body>
+</html>
